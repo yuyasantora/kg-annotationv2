@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { AnnotationCanvas } from "@/components/annotation/AnnotationCanvas";
+import { detectObjects, DetectionResult } from "@/lib/api";
 import {
   Upload,
   Image as ImageIcon,
@@ -20,7 +21,22 @@ import {
   EyeOff,
   ArrowLeft,
   ArrowRight,
+  Loader2,
+  CheckCircle,
+  AlertCircle,
 } from "lucide-react";
+
+interface Annotation {
+  id: number;
+  type: 'bbox';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  confidence?: number;
+  source?: 'manual' | 'ai';
+}
 
 export default function KGAnnotationApp() {
   const [currentPage, setCurrentPage] = useState("画像を登録する");
@@ -29,8 +45,10 @@ export default function KGAnnotationApp() {
   const [autoAnnotateMethod, setAutoAnnotateMethod] = useState("プリセットモデルを使用");
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.3);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [annotations, setAnnotations] = useState<Record<number, any[]>>({});
+  const [annotations, setAnnotations] = useState<Record<number, Annotation[]>>({});
   const [currentStep, setCurrentStep] = useState<"upload" | "annotation" | "labeling">("upload");
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectionResults, setDetectionResults] = useState<Record<number, DetectionResult[]>>({});
 
   const handleFileUpload = useCallback((files: FileList | null) => {
     if (files) {
@@ -40,6 +58,54 @@ export default function KGAnnotationApp() {
       setUploadedFiles(prev => [...prev, ...newFiles]);
     }
   }, []);
+
+  // AI自動検出の実行
+  const runAutoDetection = async () => {
+    if (uploadedFiles.length === 0) return;
+
+    setIsDetecting(true);
+    try {
+      const results: Record<number, DetectionResult[]> = {};
+      const newAnnotations: Record<number, Annotation[]> = {};
+
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const file = uploadedFiles[i];
+        
+        try {
+          const detectionResult = await detectObjects(file);
+          results[i] = detectionResult.detections;
+
+          // 検出結果をアノテーション形式に変換
+          const aiAnnotations: Annotation[] = detectionResult.detections
+            .filter(detection => detection.confidence >= confidenceThreshold)
+            .map((detection, index) => ({
+              id: Date.now() + index,
+              type: 'bbox' as const,
+              x: detection.bbox.x1,
+              y: detection.bbox.y1,
+              width: detection.bbox.x2 - detection.bbox.x1,
+              height: detection.bbox.y2 - detection.bbox.y1,
+              label: detection.class_name,
+              confidence: detection.confidence,
+              source: 'ai' as const,
+            }));
+
+          newAnnotations[i] = aiAnnotations;
+        } catch (error) {
+          console.error(`画像 ${file.name} の検出に失敗:`, error);
+        }
+      }
+
+      setDetectionResults(results);
+      setAnnotations(newAnnotations);
+      
+    } catch (error) {
+      console.error('自動検出中にエラー:', error);
+      alert('自動検出中にエラーが発生しました。');
+    } finally {
+      setIsDetecting(false);
+    }
+  };
 
   const startAnnotation = () => {
     if (uploadedFiles.length > 0) {
@@ -60,7 +126,7 @@ export default function KGAnnotationApp() {
     }
   };
 
-  const handleAnnotationsChange = (newAnnotations: any[]) => {
+  const handleAnnotationsChange = (newAnnotations: Annotation[]) => {
     if (selectedImageIndex !== null) {
       setAnnotations(prev => ({
         ...prev,
@@ -203,6 +269,12 @@ export default function KGAnnotationApp() {
                                 className="w-full h-20 object-cover rounded border"
                               />
                               <p className="text-xs text-gray-600 mt-1 truncate">{file.name}</p>
+                              {/* AI検出状態の表示 */}
+                              {detectionResults[index] && (
+                                <div className="absolute top-1 right-1">
+                                  <CheckCircle className="w-4 h-4 text-green-500" />
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -213,7 +285,7 @@ export default function KGAnnotationApp() {
 
                 {/* 2. 自動アノテーション */}
                 <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-                  <h2 className="text-lg font-semibold mb-4">2. 自動アノテーション (任意)</h2>
+                  <h2 className="text-lg font-semibold mb-4">2. AI自動アノテーション</h2>
                   
                   <div className="space-y-4">
                     <div>
@@ -227,7 +299,7 @@ export default function KGAnnotationApp() {
                             onChange={(e) => setAutoAnnotateMethod(e.target.value)}
                             className="mr-2"
                           />
-                          プリセットモデルを使用
+                          プリセットモデルを使用（YOLOX）
                         </label>
                         <label className="flex items-center">
                           <input
@@ -243,11 +315,11 @@ export default function KGAnnotationApp() {
                     </div>
 
                     {autoAnnotateMethod === "プリセットモデルを使用" && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">モデルを選択</label>
-                        <select className="w-full border border-gray-300 rounded-md px-3 py-2">
-                          <option>信号検出</option>
-                        </select>
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                        <p className="text-sm text-blue-800">
+                          <Brain className="inline w-4 h-4 mr-1" />
+                          YOLOXモデル（一般物体検出）を使用します。80クラスの物体を検出できます。
+                        </p>
                       </div>
                     )}
 
@@ -264,12 +336,50 @@ export default function KGAnnotationApp() {
                         onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
                         className="w-full"
                       />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>低精度</span>
+                        <span>高精度</span>
+                      </div>
                     </div>
 
-                    <Button className="w-full">
-                      <Brain className="mr-2 h-4 w-4" />
-                      自動アノテーションを実行
+                    <Button 
+                      className="w-full" 
+                      onClick={runAutoDetection}
+                      disabled={uploadedFiles.length === 0 || isDetecting}
+                    >
+                      {isDetecting ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Brain className="mr-2 h-4 w-4" />
+                      )}
+                      {isDetecting ? 'AI検出実行中...' : 'AI自動検出を実行'}
                     </Button>
+
+                    {/* 検出結果サマリー */}
+                    {Object.keys(detectionResults).length > 0 && (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div className="flex items-center mb-2">
+                          <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
+                          <h3 className="font-semibold text-green-800">AI検出完了</h3>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-green-700">処理済み画像:</span>
+                            <span className="font-semibold ml-1">
+                              {Object.keys(detectionResults).length}/{uploadedFiles.length}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-green-700">検出オブジェクト数:</span>
+                            <span className="font-semibold ml-1">
+                              {Object.values(detectionResults).reduce((sum, results) => 
+                                sum + results.filter(r => r.confidence >= confidenceThreshold).length, 0
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -277,7 +387,7 @@ export default function KGAnnotationApp() {
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
                   <h2 className="text-lg font-semibold mb-4">3. 手動アノテーション</h2>
                   <p className="text-gray-600 mb-4">
-                    Webブラウザ上で直接アノテーションを行います。バウンディングボックスの描画、ラベル付けが可能です。
+                    AI検出結果の確認・修正、または手動でのアノテーション追加を行います。
                   </p>
                   
                   <Button 
@@ -286,7 +396,7 @@ export default function KGAnnotationApp() {
                     onClick={startAnnotation}
                   >
                     <Play className="mr-2 h-4 w-4" />
-                    アノテーション開始
+                    アノテーション画面へ
                   </Button>
                 </div>
               </div>
@@ -306,6 +416,11 @@ export default function KGAnnotationApp() {
                       <h1 className="text-xl font-semibold">
                         画像アノテーション ({selectedImageIndex + 1}/{uploadedFiles.length})
                       </h1>
+                      {detectionResults[selectedImageIndex] && (
+                        <div className="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs">
+                          AI検出済み: {detectionResults[selectedImageIndex].filter(r => r.confidence >= confidenceThreshold).length}件
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center space-x-2">
                       <Button 
@@ -381,8 +496,13 @@ export default function KGAnnotationApp() {
                                   placeholder="分類ラベルを入力"
                                 />
                               </div>
-                              <div className="text-sm text-gray-500">
-                                アノテーション数: {annotations[index]?.length || 0}
+                              <div className="text-sm text-gray-500 space-y-1">
+                                <div>アノテーション数: {annotations[index]?.length || 0}</div>
+                                {detectionResults[index] && (
+                                  <div className="text-green-600">
+                                    AI検出: {detectionResults[index].filter(r => r.confidence >= confidenceThreshold).length}件
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
