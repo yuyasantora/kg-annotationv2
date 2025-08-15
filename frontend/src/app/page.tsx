@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { AnnotationCanvas } from "@/components/annotation/AnnotationCanvas";
-import { detectObjects, DetectionResult } from "@/lib/api";
+import { detectObjects, DetectionResult, getAnnotations, createAnnotation } from "@/lib/api";
 import {
   Upload,
   Image as ImageIcon,
@@ -44,11 +44,13 @@ export default function KGAnnotationApp() {
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
   const [autoAnnotateMethod, setAutoAnnotateMethod] = useState("プリセットモデルを使用");
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.3);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(true);
   const [annotations, setAnnotations] = useState<Record<number, Annotation[]>>({});
   const [currentStep, setCurrentStep] = useState<"upload" | "annotation" | "labeling">("upload");
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectionResults, setDetectionResults] = useState<Record<number, DetectionResult[]>>({});
+  const [selectedImageForPreview, setSelectedImageForPreview] = useState<number | null>(null);
+  const [backendTestResult, setBackendTestResult] = useState<string>("");
 
   const handleFileUpload = useCallback((files: FileList | null) => {
     if (files) {
@@ -143,6 +145,42 @@ export default function KGAnnotationApp() {
   const backToUpload = () => {
     setCurrentStep("upload");
     setSelectedImageIndex(null);
+  };
+
+  const testBackendConnection = async () => {
+    try {
+      console.log("🔗 Testing backend connection...");
+      const result = await getAnnotations();
+      console.log("✅ Backend response:", result);
+      setBackendTestResult(`✅ Success: Found ${result.total} annotations`);
+    } catch (error) {
+      console.error("❌ Backend test failed:", error);
+      setBackendTestResult(`❌ Error: ${error}`);
+    }
+  };
+
+  const testCreateAnnotation = async () => {
+    try {
+      console.log("➕ Testing annotation creation...");
+      const testAnnotation = {
+        image_id: "550e8400-e29b-41d4-a716-446655440000",
+        annotation_type: "bbox",
+        x: 100,
+        y: 50,
+        width: 200,
+        height: 150,
+        label: "test_object",
+        confidence: 0.95,
+        source: "manual"
+      };
+      
+      const result = await createAnnotation(testAnnotation);
+      console.log("✅ Create response:", result);
+      setBackendTestResult(`✅ Created: ${result.message}`);
+    } catch (error) {
+      console.error("❌ Create test failed:", error);
+      setBackendTestResult(`❌ Create Error: ${error}`);
+    }
   };
 
   return (
@@ -260,24 +298,78 @@ export default function KGAnnotationApp() {
                       </div>
                       
                       {previewOpen && (
-                        <div className="grid grid-cols-4 gap-3">
-                          {uploadedFiles.map((file, index) => (
-                            <div key={index} className="relative">
-                              <img
-                                src={URL.createObjectURL(file)}
-                                alt={file.name}
-                                className="w-full h-20 object-cover rounded border"
-                              />
-                              <p className="text-xs text-gray-600 mt-1 truncate">{file.name}</p>
-                              {/* AI検出状態の表示 */}
-                              {detectionResults[index] && (
-                                <div className="absolute top-1 right-1">
-                                  <CheckCircle className="w-4 h-4 text-green-500" />
+                        <>
+                          <div className="grid grid-cols-3 gap-4">
+                            {uploadedFiles.map((file, index) => (
+                              <div key={index} className="relative group">
+                                <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden border-2 border-gray-200 hover:border-blue-400 transition-colors">
+                                  <img
+                                    src={URL.createObjectURL(file)}
+                                    alt={file.name}
+                                    className="w-full h-full object-contain cursor-pointer"
+                                    onClick={() => setSelectedImageForPreview(index)}
+                                  />
                                 </div>
-                              )}
+                                
+                                {/* 画像情報 */}
+                                <div className="mt-2 space-y-1">
+                                  <p className="text-sm font-medium text-gray-900 truncate" title={file.name}>
+                                    {file.name}
+                                  </p>
+                                  <div className="flex items-center justify-between text-xs text-gray-500">
+                                    <span>{(file.size / 1024 / 1024).toFixed(1)} MB</span>
+                                    <span>{file.type.split('/')[1].toUpperCase()}</span>
+                                  </div>
+                                </div>
+
+                                {/* AI検出状態 */}
+                                {detectionResults[index] && (
+                                  <div className="absolute top-2 right-2 bg-green-500 text-white rounded-full p-1">
+                                    <CheckCircle className="w-4 h-4" />
+                                  </div>
+                                )}
+
+                                {/* 削除ボタン */}
+                                <button
+                                  onClick={() => {
+                                    const newFiles = uploadedFiles.filter((_, i) => i !== index);
+                                    setUploadedFiles(newFiles);
+                                    // 検出結果も削除
+                                    const newResults = { ...detectionResults };
+                                    delete newResults[index];
+                                    setDetectionResults(newResults);
+                                  }}
+                                  className="absolute top-2 left-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* モーダル表示 */}
+                          {selectedImageForPreview !== null && (
+                            <div 
+                              className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50"
+                              onClick={() => setSelectedImageForPreview(null)}
+                            >
+                              <div className="max-w-4xl max-h-4xl p-4">
+                                <img
+                                  src={URL.createObjectURL(uploadedFiles[selectedImageForPreview])}
+                                  alt={uploadedFiles[selectedImageForPreview].name}
+                                  className="max-w-full max-h-full object-contain rounded-lg"
+                                />
+                                <div className="text-white text-center mt-4">
+                                  <p className="text-lg font-medium">{uploadedFiles[selectedImageForPreview].name}</p>
+                                  <p className="text-sm opacity-75">
+                                    {(uploadedFiles[selectedImageForPreview].size / 1024 / 1024).toFixed(1)} MB • 
+                                    {uploadedFiles[selectedImageForPreview].type}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
-                          ))}
-                        </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -398,6 +490,42 @@ export default function KGAnnotationApp() {
                     <Play className="mr-2 h-4 w-4" />
                     アノテーション画面へ
                   </Button>
+                </div>
+
+                {/* 4. バックエンドAPIテスト */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6 mt-6">
+                  <h2 className="text-lg font-semibold mb-4">4. バックエンドAPIテスト</h2>
+                  <p className="text-gray-600 mb-4">
+                    Rustバックエンドとの接続をテストします。
+                  </p>
+                  
+                  <div className="space-y-3 mb-4">
+                    <Button 
+                      onClick={testBackendConnection}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      📡 アノテーション一覧取得テスト
+                    </Button>
+                    
+                    <Button 
+                      onClick={testCreateAnnotation}
+                      variant="outline"
+                      className="w-full"
+                    >
+                      ➕ アノテーション作成テスト
+                    </Button>
+                  </div>
+
+                  {backendTestResult && (
+                    <div className={`p-3 rounded border text-sm ${
+                      backendTestResult.includes('✅') 
+                        ? 'bg-green-50 border-green-200 text-green-800'
+                        : 'bg-red-50 border-red-200 text-red-800'
+                    }`}>
+                      {backendTestResult}
+                    </div>
+                  )}
                 </div>
               </div>
             )}

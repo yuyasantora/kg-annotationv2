@@ -1,6 +1,6 @@
 // API基底URL設定
 const AI_API_BASE_URL = process.env.NEXT_PUBLIC_AI_API_URL || 'http://localhost:8000';
-const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
 export interface DetectionResult {
   id: number;
@@ -71,6 +71,99 @@ export async function searchSimilarImages(queryVector: number[], topK: number = 
 
   if (!response.ok) {
     throw new Error(`類似画像検索API呼び出しに失敗: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+// アノテーション関連の型定義
+export interface AnnotationData {
+  id: string;
+  image_id: string;
+  user_id: string;
+  annotation_type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  confidence?: number;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateAnnotationRequest {
+  image_id: string;
+  annotation_type: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  confidence?: number;
+  source: string;
+}
+
+export interface AnnotationListResponse {
+  annotations: AnnotationData[];
+  total: number;
+}
+
+// アノテーションAPI関数
+export async function getAnnotations(imageId?: string): Promise<AnnotationListResponse> {
+  const url = imageId 
+    ? `${BACKEND_API_BASE_URL}/api/images/${imageId}/annotations`
+    : `${BACKEND_API_BASE_URL}/api/annotations`;
+
+  const response = await fetch(url);
+  
+  if (!response.ok) {
+    throw new Error(`アノテーション取得に失敗: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function createAnnotation(annotation: CreateAnnotationRequest): Promise<any> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/annotations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(annotation),
+  });
+
+  if (!response.ok) {
+    throw new Error(`アノテーション作成に失敗: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function updateAnnotation(id: string, updates: Partial<CreateAnnotationRequest>): Promise<any> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/annotations/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updates),
+  });
+
+  if (!response.ok) {
+    throw new Error(`アノテーション更新に失敗: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export async function deleteAnnotation(id: string): Promise<any> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/annotations/${id}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`アノテーション削除に失敗: ${response.status}`);
   }
 
   return response.json();

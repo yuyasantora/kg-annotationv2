@@ -12,6 +12,10 @@ import faiss
 from typing import List, Dict, Any
 import os
 from datetime import datetime
+import urllib.request
+
+# YOLOXのカスタム実装をインポート
+from yolox.onnx_predictor import YOLOXONNXPredictor
 
 app = FastAPI(title="KG Annotation AI Service", version="0.1.0")
 
@@ -25,24 +29,39 @@ app.add_middleware(
 )
 
 # グローバル変数でモデルを保持
-yolo_model = None
+yolox_predictor = None
 sentence_model = None
 vector_index = None
 
 @app.on_event("startup")
 async def startup_event():
     """アプリケーション起動時にモデルを読み込み"""
-    global yolo_model, sentence_model, vector_index
+    global yolox_predictor, sentence_model, vector_index
     
     print("🚀 Loading AI models...")
     
     # YOLOXモデルの読み込み
     try:
-        from ultralytics import YOLO
-        yolo_model = YOLO('yolov8n.pt')  # 軽量版から開始
-        print("✅ YOLO model loaded")
+        # YOLOXのONNXモデルをダウンロード
+        model_path = "yolox_s.onnx"
+        if not os.path.exists(model_path):
+            print("📥 Downloading YOLOX ONNX model...")
+            model_url = "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_s.onnx"
+            urllib.request.urlretrieve(model_url, model_path)
+            print("✅ YOLOX ONNX model downloaded")
+        
+        # モデルをバイト形式で読み込み
+        with open(model_path, 'rb') as f:
+            model_bytes = f.read()
+        
+        # YOLOXプレディクターを初期化
+        yolox_predictor = YOLOXONNXPredictor(
+            model_bytes=model_bytes,
+            input_shape_str="640,640"
+        )
+        print("✅ YOLOX model loaded")
     except Exception as e:
-        print(f"❌ Failed to load YOLO model: {e}")
+        print(f"❌ Failed to load YOLOX model: {e}")
     
     # Sentence Transformersモデルの読み込み
     try:
@@ -62,7 +81,7 @@ async def root():
         "status": "healthy",
         "version": "0.1.0",
         "models_loaded": {
-            "yolo": yolo_model is not None,
+            "yolox": yolox_predictor is not None,
             "sentence_transformer": sentence_model is not None,
             "vector_index": vector_index is not None
         }
@@ -74,7 +93,7 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "models_status": {
-            "yolo": "loaded" if yolo_model else "not_loaded",
+            "yolox": "loaded" if yolox_predictor else "not_loaded",
             "sentence_transformer": "loaded" if sentence_model else "not_loaded",
             "vector_index": "initialized" if vector_index else "not_initialized"
         }
@@ -83,43 +102,43 @@ async def health_check():
 @app.post("/detect")
 async def detect_objects(image: UploadFile = File(...)):
     """YOLOX物体検出API"""
-    if yolo_model is None:
-        raise HTTPException(status_code=503, detail="YOLO model not loaded")
+    if yolox_predictor is None:
+        raise HTTPException(status_code=503, detail="YOLOX model not loaded")
     
     try:
         # 画像読み込み
         image_bytes = await image.read()
         pil_image = Image.open(io.BytesIO(image_bytes))
         
-        # RGB変換
+        # RGB→BGRに変換（OpenCV形式）
         if pil_image.mode != 'RGB':
             pil_image = pil_image.convert('RGB')
         
-        # YOLO推論
-        results = yolo_model(pil_image)
+        # PIL → numpy → OpenCV BGR
+        img_array = np.array(pil_image)
+        img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
         
-        # 検出結果を処理
+        # YOLOX推論実行
+        detections_raw = yolox_predictor.predict(
+            origin_img_bgr=img_bgr,
+            score_thr=0.3,
+            nms_thr=0.45
+        )
+        
+        # フロントエンド用の形式に変換
         detections = []
-        for r in results:
-            boxes = r.boxes
-            if boxes is not None:
-                for i, box in enumerate(boxes):
-                    x1, y1, x2, y2 = box.xyxy[0].tolist()
-                    conf = box.conf[0].item()
-                    cls = int(box.cls[0].item())
-                    class_name = yolo_model.names[cls]
-                    
-                    detections.append({
-                        "id": i,
-                        "class_name": class_name,
-                        "confidence": round(conf, 3),
-                        "bbox": {
-                            "x1": round(x1, 2),
-                            "y1": round(y1, 2),
-                            "x2": round(x2, 2),
-                            "y2": round(y2, 2)
-                        }
-                    })
+        for i, det in enumerate(detections_raw):
+            detections.append({
+                "id": i,
+                "class_name": det["label_name"],
+                "confidence": round(det["score"], 3),
+                "bbox": {
+                    "x1": float(det["xmin"]),
+                    "y1": float(det["ymin"]),
+                    "x2": float(det["xmax"]),
+                    "y2": float(det["ymax"])
+                }
+            })
         
         return {
             "success": True,
