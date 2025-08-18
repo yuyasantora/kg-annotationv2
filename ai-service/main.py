@@ -207,4 +207,4 @@ async def search_similar_images(query_vector: List[float], top_k: int = 5):
 
 if __name__ == "__main__":
     print("🐍 KG Annotation AI Service starting...")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)  # ポートを8001に変更

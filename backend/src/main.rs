@@ -1,9 +1,9 @@
 use axum::{
-    routing::{get, post, put, delete},
+    routing::{get, post, put},
     Router,
     response::Json,
     http::StatusCode,
-    extract::{Path, Query, State},
+    extract::{Path, Query},
     Json as JsonExtractor,
 };
 use tower_http::cors::CorsLayer;
@@ -11,8 +11,6 @@ use serde_json::{json, Value};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::Utc;
-use sqlx::{PgPool, Row};
-use std::env;
 
 mod models;
 use models::{Annotation, CreateAnnotationRequest, UpdateAnnotationRequest};
@@ -41,36 +39,14 @@ pub struct CreateAnnotationResponse {
 async fn main() {
     println!("🦀 KG Annotation Backend starting...");
 
-    // 環境変数の読み込み
-    dotenv::dotenv().ok();
-    
-    // データベース接続
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
-    
-    println!("🔗 Connecting to database...");
-    let pool = PgPool::connect(&database_url)
-        .await
-        .expect("Failed to create pool");
-
-    // データベース接続テスト
-    match sqlx::query("SELECT 1").fetch_one(&pool).await {
-        Ok(_) => println!("✅ Database connection successful"),
-        Err(e) => {
-            println!("❌ Database connection failed: {}", e);
-            std::process::exit(1);
-        }
-    }
-
     let app = Router::new()
         .route("/", get(health_check))
         .route("/health", get(health_check))
         .route("/api/auth/login", post(login_placeholder))
-        // 実際のDB接続版のAPI
-        .route("/api/annotations", get(list_annotations).post(create_annotation))
-        .route("/api/annotations/:id", put(update_annotation).delete(delete_annotation))
-        .route("/api/images/:image_id/annotations", get(get_image_annotations))
-        .with_state(pool)
+        // アノテーション関連のモックAPI
+        .route("/api/annotations", get(list_annotations_mock).post(create_annotation_mock))
+        .route("/api/annotations/:id", put(update_annotation_mock))
+        .route("/api/images/:image_id/annotations", get(get_image_annotations_mock))
         .layer(CorsLayer::permissive());
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3002")
@@ -78,11 +54,10 @@ async fn main() {
         .unwrap();
         
     println!("🚀 Server running on http://0.0.0.0:3002");
-    println!("🗄️ Database APIs available:");
+    println!("📡 Mock APIs available:");
     println!("   GET  /api/annotations - アノテーション一覧");
     println!("   POST /api/annotations - アノテーション作成");
-    println!("   PUT  /api/annotations/:id - アノテーション更新"); 
-    println!("   DELETE /api/annotations/:id - アノテーション削除");
+    println!("   PUT  /api/annotations/:id - アノテーション更新");
     println!("   GET  /api/images/:image_id/annotations - 画像のアノテーション");
     
     axum::serve(listener, app).await.unwrap();
@@ -107,62 +82,53 @@ fn create_mock_annotation(id: Uuid, image_id: Uuid, label: &str, x: f32, y: f32,
     }
 }
 
-// 実際のDB版のハンドラー関数
-async fn list_annotations(
+// アノテーション一覧取得（モック）
+async fn list_annotations_mock(
     Query(params): Query<AnnotationQuery>,
-    State(pool): State<PgPool>,
 ) -> Result<Json<AnnotationListResponse>, StatusCode> {
-    println!("📋 Getting annotations from database");
+    println!("📋 Mock: Getting annotations list");
 
-    // SQLクエリの構築
-    let mut query_str = "SELECT * FROM annotations WHERE 1=1".to_string();
-    let mut query_params = Vec::new();
+    // モックデータを生成
+    let mut mock_annotations = vec![
+        create_mock_annotation(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "person",
+            100.0, 50.0, 200.0, 300.0
+        ),
+        create_mock_annotation(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "car",
+            300.0, 200.0, 150.0, 100.0
+        ),
+        create_mock_annotation(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            "dog",
+            50.0, 250.0, 80.0, 60.0
+        ),
+    ];
 
+    // 画像IDでフィルタリング
     if let Some(image_id) = params.image_id {
-        query_str.push_str(&format!(" AND image_id = ${}", query_params.len() + 1));
-        query_params.push(image_id.to_string());
+        mock_annotations.retain(|ann| ann.image_id == image_id);
     }
 
-    let limit = params.limit.unwrap_or(50) as i64;
-    let offset = params.offset.unwrap_or(0) as i64;
-
-    query_str.push_str(&format!(" ORDER BY created_at DESC LIMIT ${} OFFSET ${}", 
-        query_params.len() + 1, query_params.len() + 2));
-
-    // 実際のクエリ実行
-    let rows = sqlx::query(&query_str)
-        .bind(limit)
-        .bind(offset)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| {
-            println!("Database error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    let annotations: Vec<Annotation> = rows.into_iter().map(|row| {
-        Annotation {
-            id: row.get("id"),
-            image_id: row.get("image_id"),
-            user_id: row.get("user_id"),
-            annotation_type: row.get("annotation_type"),
-            x: row.get("x"),
-            y: row.get("y"),
-            width: row.get("width"),
-            height: row.get("height"),
-            label: row.get("label"),
-            confidence: row.get("confidence"),
-            source: row.get("source"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        }
-    }).collect();
-
-    println!("Found {} annotations", annotations.len());
+    // ページネーション
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(10);
+    let total = mock_annotations.len();
+    
+    let paginated: Vec<Annotation> = mock_annotations
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect();
 
     Ok(Json(AnnotationListResponse {
-        annotations: annotations.clone(),
-        total: annotations.len(),
+        annotations: paginated,
+        total,
     }))
 }
 
@@ -198,17 +164,6 @@ async fn update_annotation_mock(
 
     Ok(Json(json!({
         "message": format!("Annotation {} updated successfully", annotation_id)
-    })))
-}
-
-// アノテーション削除（モック）
-async fn delete_annotation_mock(
-    Path(annotation_id): Path<Uuid>,
-) -> Result<Json<Value>, StatusCode> {
-    println!("🗑️ Mock: Deleting annotation {}", annotation_id);
-
-    Ok(Json(json!({
-        "message": format!("Annotation {} deleted successfully", annotation_id)
     })))
 }
 

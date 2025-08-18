@@ -51,6 +51,8 @@ export default function KGAnnotationApp() {
   const [detectionResults, setDetectionResults] = useState<Record<number, DetectionResult[]>>({});
   const [selectedImageForPreview, setSelectedImageForPreview] = useState<number | null>(null);
   const [backendTestResult, setBackendTestResult] = useState<string>("");
+  const [saveStatus, setSaveStatus] = useState<Record<number, 'saving' | 'saved' | 'error'>>({});
+  
 
   const handleFileUpload = useCallback((files: FileList | null) => {
     if (files) {
@@ -128,12 +130,24 @@ export default function KGAnnotationApp() {
     }
   };
 
-  const handleAnnotationsChange = (newAnnotations: Annotation[]) => {
+  const handleAnnotationsChange = async (newAnnotations: Annotation[]) => {
     if (selectedImageIndex !== null) {
+      // ローカルstateを更新
       setAnnotations(prev => ({
         ...prev,
         [selectedImageIndex]: newAnnotations
       }));
+      
+      // 前回のアノテーション数と比較して新しいものだけ保存
+      const previousAnnotations = annotations[selectedImageIndex] || [];
+      const newlyAdded = newAnnotations.filter(
+        newAnnotation => !previousAnnotations.some(prev => prev.id === newAnnotation.id)
+      );
+      
+      // 新しく追加されたアノテーションをバックエンドに保存
+      for (const annotation of newlyAdded) {
+        await saveAnnotationToBackend(annotation, selectedImageIndex);
+      }
     }
   };
 
@@ -180,6 +194,72 @@ export default function KGAnnotationApp() {
     } catch (error) {
       console.error("❌ Create test failed:", error);
       setBackendTestResult(`❌ Create Error: ${error}`);
+    }
+  };
+
+  const saveAnnotationToBackend = async (annotation: Annotation, imageIndex: number) => {
+    try {
+      setSaveStatus(prev => ({ ...prev, [imageIndex]: 'saving' }));
+      
+      // 仮の画像IDを生成（実際は画像アップロード時に生成）
+      const imageId = "550e8400-e29b-41d4-a716-446655440000";
+      
+      const annotationData = {
+        image_id: imageId,
+        annotation_type: annotation.type, // 'bbox'
+        x: annotation.x,
+        y: annotation.y,
+        width: annotation.width,
+        height: annotation.height,
+        label: annotation.label,
+        confidence: 0.60,
+        source: 'manual'
+      };
+
+      const result = await createAnnotation(annotationData);
+      console.log('✅ Annotation saved to backend:', result);
+      
+      setSaveStatus(prev => ({ ...prev, [imageIndex]: 'saved' }));
+      
+      // 3秒後にステータスをクリア
+      setTimeout(() => {
+        setSaveStatus(prev => {
+          const newStatus = { ...prev };
+          delete newStatus[imageIndex];
+          return newStatus;
+        });
+      }, 3000);
+      
+    } catch (error) {
+      console.error('❌ Failed to save annotation:', error);
+      setSaveStatus(prev => ({ ...prev, [imageIndex]: 'error' }));
+    }
+  };
+
+  const saveAIDetectionsToBackend = async () => {
+    for (const [imageIndex, detections] of Object.entries(detectionResults)) {
+      const imageIndexNum = parseInt(imageIndex);
+      
+      for (const detection of detections) {
+        const annotation = {
+          image_id: `image-${imageIndexNum}-${Date.now()}`,
+          annotation_type: 'bbox',
+          x: detection.bbox.x1,
+          y: detection.bbox.y1,
+          width: detection.bbox.x2 - detection.bbox.x1,
+          height: detection.bbox.y2 - detection.bbox.y1,
+          label: detection.class_name,
+          confidence: detection.confidence,
+          source: 'ai'
+        };
+        
+        try {
+          await createAnnotation(annotation);
+          console.log(`✅ AI detection saved: ${detection.class_name}`);
+        } catch (error) {
+          console.error(`❌ Failed to save AI detection:`, error);
+        }
+      }
     }
   };
 
@@ -549,8 +629,35 @@ export default function KGAnnotationApp() {
                           AI検出済み: {detectionResults[selectedImageIndex].filter(r => r.confidence >= confidenceThreshold).length}件
                         </div>
                       )}
+                      
+                      {/* 保存状況表示 */}
+                      {saveStatus[selectedImageIndex] && (
+                        <div className={`px-2 py-1 rounded-full text-xs ${
+                          saveStatus[selectedImageIndex] === 'saving' 
+                            ? 'bg-blue-100 text-blue-800'
+                            : saveStatus[selectedImageIndex] === 'saved'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {saveStatus[selectedImageIndex] === 'saving' && '💾 保存中...'}
+                          {saveStatus[selectedImageIndex] === 'saved' && '✅ 保存済み'}
+                          {saveStatus[selectedImageIndex] === 'error' && '❌ 保存エラー'}
+                        </div>
+                      )}
                     </div>
+                    
                     <div className="flex items-center space-x-2">
+                      {/* AI検出結果を一括保存ボタン */}
+                      {detectionResults[selectedImageIndex] && (
+                        <Button 
+                          variant="outline" 
+                          onClick={saveAIDetectionsToBackend}
+                          size="sm"
+                        >
+                          💾 AI検出結果を保存
+                        </Button>
+                      )}
+                      
                       <Button 
                         variant="outline" 
                         onClick={prevImage}
