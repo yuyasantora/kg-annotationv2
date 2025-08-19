@@ -178,7 +178,7 @@ export default function KGAnnotationApp() {
       console.log("➕ Testing annotation creation...");
       const testAnnotation = {
         image_id: "550e8400-e29b-41d4-a716-446655440000",
-        annotation_type: "bbox",
+        annotation_type: "boundingbox", // 修正: "bbox" -> "boundingbox"
         x: 100,
         y: 50,
         width: 200,
@@ -206,14 +206,14 @@ export default function KGAnnotationApp() {
       
       const annotationData = {
         image_id: imageId,
-        annotation_type: annotation.type, // 'bbox'
+        annotation_type: "boundingbox", // 修正: 'bbox' -> 'boundingbox'
         x: annotation.x,
         y: annotation.y,
         width: annotation.width,
         height: annotation.height,
         label: annotation.label,
-        confidence: 0.60,
-        source: 'manual'
+        confidence: annotation.confidence || 0.6, // 修正: デフォルト値設定
+        source: annotation.source || "manual" // 修正: annotation.sourceがあればそれを使用
       };
 
       const result = await createAnnotation(annotationData);
@@ -242,8 +242,8 @@ export default function KGAnnotationApp() {
       
       for (const detection of detections) {
         const annotation = {
-          image_id: `image-${imageIndexNum}-${Date.now()}`,
-          annotation_type: 'bbox',
+          image_id: "550e8400-e29b-41d4-a716-446655440000", // 修正: 固定のUUID形式
+          annotation_type: 'boundingbox', // 修正: 'bbox' -> 'boundingbox'
           x: detection.bbox.x1,
           y: detection.bbox.y1,
           width: detection.bbox.x2 - detection.bbox.x1,
