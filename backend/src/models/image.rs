@@ -1,9 +1,8 @@
-use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Image {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -43,4 +42,11 @@ pub struct ImageResponse {
     pub created_at: DateTime<Utc>,
     pub annotation_count: i64,
     pub url: String,  // 追加
+}
+
+// main.rs から ImageSearchRequest を移動
+#[derive(Debug, Deserialize)]
+pub struct ImageSearchRequest {
+    pub query: String,
+    pub top_k: Option<i32>,
 }

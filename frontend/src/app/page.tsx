@@ -819,20 +819,8 @@ export default function KGAnnotationApp() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* 画像検索・選択エリア */}
-                <div className="bg-white rounded-lg border border-gray-200 p-6">
-                  <h3 className="text-lg font-semibold mb-4">画像を選択</h3>
-                  <ImageSearch 
-                    onSelect={(images) => {
-                      // 選択された画像のIDリストを管理
-                      setSelectedImages(images.map(img => img.id));
-                    }}
-                    selectable={true}  // 選択可能モードを有効化
-                  />
-                </div>
-
                 {/* データセット作成フォーム */}
-                <div className="bg-white rounded-lg border border-gray-200">
+                <div className="bg-white rounded-lg border border-gray-200 md:col-span-2">
                   <CreateDataset
                     selectedImages={selectedImages}
                     onSuccess={(downloadUrl) => {

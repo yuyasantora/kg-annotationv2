@@ -1,9 +1,8 @@
-// 存在するモジュールのみ宣言
-pub mod user;
-pub mod image;
 pub mod annotation;
+pub mod dataset;
+pub mod image;
 
-// 公開するモデル
-pub use user::*;
-pub use image::*;
+// 各モジュールから主要な型を再エクスポート
 pub use annotation::*;
+pub use dataset::*;
+pub use image::*;

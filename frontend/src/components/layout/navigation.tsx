@@ -14,6 +14,8 @@ import {
   X,
   Brain,
   Search,
+  FileText,
+  Package
 } from "lucide-react";
 
 const navigationItems = [
@@ -22,6 +24,7 @@ const navigationItems = [
   { href: "/images", label: "画像管理", icon: ImageIcon },
   { href: "/ai-tools", label: "AI機能", icon: Brain },
   { href: "/search", label: "検索", icon: Search },
+  { href: "/datasets", label: "データセット作成", icon: Package},
   { href: "/settings", label: "設定", icon: Settings },
 ];
 

@@ -1,5 +1,5 @@
 // API基底URL設定
-const AI_API_BASE_URL = process.env.NEXT_PUBLIC_AI_API_URL || 'http://localhost:8001';
+const AI_API_BASE_URL = process.env.NEXT_PUBLIC_AI_API_URL || 'http://localhost:8002';
 const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
 export interface DetectionResult {
@@ -235,4 +235,44 @@ export enum DatasetFormat {
   Yolo = 'yolo',
   Coco = 'coco',
   Voc = 'voc',
+}
+
+// データセットエクスポートのリクエスト型
+export interface ExportDatasetRequest {
+  name: string;
+  format: DatasetFormat;
+  filter: {
+    type: "detection" | "classification";
+    labels: string[];
+  };
+}
+
+// データセットエクスポートAPI関数
+export async function exportDataset(request: ExportDatasetRequest): Promise<Blob> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/export`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`データセットのエクスポートに失敗: ${response.status} - ${errorText}`);
+  }
+
+  return response.blob(); // ZIPファイルをBlobとして受け取る
+}
+
+// 利用可能なアノテーションラベル一覧を取得する関数
+export async function getAvailableLabels(): Promise<string[]> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/annotations/labels`);
+  
+  if (!response.ok) {
+    throw new Error(`ラベル一覧の取得に失敗: ${response.status}`);
+  }
+
+  const data = await response.json();
+  return data.labels; // { labels: ["car", "person"] } のような形式を想定
 }
