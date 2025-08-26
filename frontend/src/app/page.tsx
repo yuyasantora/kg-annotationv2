@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { AnnotationCanvas } from "@/components/annotation/AnnotationCanvas";
-import { detectObjects, DetectionResult, getAnnotations, createAnnotation } from "@/lib/api";
+import { detectObjects, DetectionResult, getAnnotations, createAnnotation, uploadImage } from "@/lib/api";
 import {
   Upload,
   Image as ImageIcon,
@@ -25,6 +25,9 @@ import {
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
+import { ImageSearch } from "@/components/search/ImageSearch";
+import { CreateDataset } from "@/components/dataset/CreateDataset"; // 追加: CreateDatasetコンポーネントをインポート
+import { toast } from "react-hot-toast"; // トースト通知ライブラリをインポート
 
 interface Annotation {
   id: number;
@@ -52,6 +55,7 @@ export default function KGAnnotationApp() {
   const [selectedImageForPreview, setSelectedImageForPreview] = useState<number | null>(null);
   const [backendTestResult, setBackendTestResult] = useState<string>("");
   const [saveStatus, setSaveStatus] = useState<Record<number, 'saving' | 'saved' | 'error'>>({});
+  const [selectedImages, setSelectedImages] = useState<string[]>([]); // 追加: 選択された画像のIDを管理
   
 
   const handleFileUpload = useCallback((files: FileList | null) => {
@@ -260,6 +264,47 @@ export default function KGAnnotationApp() {
           console.error(`❌ Failed to save AI detection:`, error);
         }
       }
+    }
+  };
+
+  // 全ての画像とアノテーションを保存する関数
+  const saveAllToDatabase = async () => {
+    try {
+      console.log("💾 Starting batch save to database...");
+      
+      for (let i = 0; i < uploadedFiles.length; i++) {
+        const file = uploadedFiles[i];
+        
+        // 1. 画像をアップロード
+        console.log(`📤 Uploading image ${i + 1}/${uploadedFiles.length}: ${file.name}`);
+        const uploadedImage = await uploadImage(file);
+        
+        // 2. そのアノテーションを保存
+        const imageAnnotations = annotations[i] || [];
+        for (const annotation of imageAnnotations) {
+          const annotationData = {
+            image_id: uploadedImage.id, // アップロードされた画像のIDを使用
+            annotation_type: "boundingbox",
+            x: annotation.x,
+            y: annotation.y,
+            width: annotation.width,
+            height: annotation.height,
+            label: annotation.label,
+            confidence: annotation.confidence || 0.6,
+            source: annotation.source || "manual"
+          };
+          
+          await createAnnotation(annotationData);
+          console.log(`✅ Saved annotation: ${annotation.label}`);
+        }
+      }
+      
+      console.log("🎉 All images and annotations saved successfully!");
+      alert("全ての画像とアノテーションが保存されました！");
+      
+    } catch (error) {
+      console.error("❌ Failed to save:", error);
+      alert("保存中にエラーが発生しました");
     }
   };
 
@@ -746,7 +791,7 @@ export default function KGAnnotationApp() {
                     ))}
                   </div>
 
-                  <Button className="w-full" size="lg">
+                  <Button className="w-full" size="lg" onClick={saveAllToDatabase}>
                     <Save className="mr-2 h-4 w-4" />
                     全てをS3とデータベースに保存
                   </Button>
@@ -756,11 +801,59 @@ export default function KGAnnotationApp() {
           </>
         )}
 
-        {/* 他のページ */}
-        {currentPage !== "画像を登録する" && (
+        {/* 画像検索ページ */}
+        {currentPage === "画像を検索する" && (
+          <div className="p-6">
+            <ImageSearch />
+          </div>
+        )}
+
+        {/* データセット作成ページ */}
+        {currentPage === "データセット作成" && (
+          <div className="p-6">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-semibold text-gray-900">
+                  データセット作成
+                </h2>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* 画像検索・選択エリア */}
+                <div className="bg-white rounded-lg border border-gray-200 p-6">
+                  <h3 className="text-lg font-semibold mb-4">画像を選択</h3>
+                  <ImageSearch 
+                    onSelect={(images) => {
+                      // 選択された画像のIDリストを管理
+                      setSelectedImages(images.map(img => img.id));
+                    }}
+                    selectable={true}  // 選択可能モードを有効化
+                  />
+                </div>
+
+                {/* データセット作成フォーム */}
+                <div className="bg-white rounded-lg border border-gray-200">
+                  <CreateDataset
+                    selectedImages={selectedImages}
+                    onSuccess={(downloadUrl) => {
+                      toast.success("データセットが作成されました");
+                      // ダウンロードリンクを表示するなどの処理
+                    }}
+                    onError={(error) => {
+                      toast.error(`エラー: ${error.message}`);
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ランキングページ */}
+        {currentPage === "ランキング" && (
           <div className="p-6 text-center">
             <h2 className="text-xl font-semibold text-gray-700">
-              {currentPage}
+              ランキング
             </h2>
             <p className="text-gray-500 mt-2">このページは開発中です</p>
           </div>

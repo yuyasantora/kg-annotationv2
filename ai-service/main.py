@@ -10,6 +10,7 @@ import torch
 from sentence_transformers import SentenceTransformer
 import faiss
 from typing import List, Dict, Any
+from pydantic import BaseModel
 import os
 from datetime import datetime
 import urllib.request
@@ -174,17 +175,27 @@ async def vectorize_text(texts: List[str]):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Vectorization failed: {str(e)}")
 
+# リクエストの型を定義
+class SearchRequest(BaseModel):
+    query_vector: List[float]
+    vectors: List[List[float]]  # 複数のベクトルを受け取る
+    top_k: int = 5
+
 @app.post("/search_similar")
-async def search_similar_images(query_vector: List[float], top_k: int = 5):
+async def search_similar_images(request: SearchRequest):
     """ベクトル類似検索API"""
-    if vector_index is None:
-        raise HTTPException(status_code=503, detail="Vector index not initialized")
-    
     try:
-        query_array = np.array([query_vector], dtype=np.float32)
+        # 検索用のインデックスを作成
+        dimension = len(request.query_vector)
+        index = faiss.IndexFlatIP(dimension)  # コサイン類似度用のインデックス
+        
+        # ベクトルをインデックスに追加
+        vectors = np.array(request.vectors).astype(np.float32)
+        index.add(vectors)
         
         # 検索実行
-        scores, indices = vector_index.search(query_array, top_k)
+        query_vector = np.array([request.query_vector]).astype(np.float32)
+        scores, indices = index.search(query_vector, min(request.top_k, len(request.vectors)))
         
         results = []
         for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
@@ -192,17 +203,18 @@ async def search_similar_images(query_vector: List[float], top_k: int = 5):
                 results.append({
                     "rank": i + 1,
                     "index": int(idx),
-                    "similarity_score": float(score)
+                    "similarity": float(score)
                 })
         
         return {
             "success": True,
-            "query_dimension": len(query_vector),
+            "query_dimension": dimension,
             "results": results,
             "total_found": len(results)
         }
         
     except Exception as e:
+        print(f"❌ Search error: {e}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 if __name__ == "__main__":

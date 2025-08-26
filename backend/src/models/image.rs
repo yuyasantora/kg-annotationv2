@@ -42,4 +42,5 @@ pub struct ImageResponse {
     pub classification_label: Option<String>,
     pub created_at: DateTime<Utc>,
     pub annotation_count: i64,
+    pub url: String,  // 追加
 }

@@ -168,3 +168,71 @@ export async function deleteAnnotation(id: string): Promise<any> {
 
   return response.json();
 }
+
+// 画像アップロード関連の型定義
+export interface ImageUploadResponse {
+  id: string;
+  filename: string;
+  original_filename: string;
+  file_size: number;
+  width: number;
+  height: number;
+  format: string;
+  classification_label?: string;
+  created_at: string;
+  annotation_count: number;
+}
+
+// 画像アップロード
+export async function uploadImage(imageFile: File): Promise<ImageUploadResponse> {
+  const formData = new FormData();
+  formData.append('image', imageFile);
+
+  try {
+    console.log('📤 Uploading to:', `${BACKEND_API_BASE_URL}/api/images`);
+    
+    const response = await fetch(`${BACKEND_API_BASE_URL}/api/images`, {
+      method: 'POST',
+      // CORSの設定を追加
+      mode: 'cors',
+      credentials: 'same-origin',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`画像アップロードに失敗: ${response.status} - ${errorText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error('❌ Upload error:', error);
+    throw error;
+  }
+}
+
+// 検索関数
+export async function searchImages(query: string, topK: number = 5): Promise<any> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/search`, {  // imagesに修正
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      query,
+      top_k: topK,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`画像検索に失敗: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export enum DatasetFormat {
+  Yolo = 'yolo',
+  Coco = 'coco',
+  Voc = 'voc',
+}
