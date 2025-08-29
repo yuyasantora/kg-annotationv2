@@ -1,5 +1,5 @@
 // API基底URL設定
-const AI_API_BASE_URL = process.env.NEXT_PUBLIC_AI_API_URL || 'http://localhost:8002';
+const AI_API_BASE_URL = process.env.NEXT_PUBLIC_AI_API_URL || 'http://localhost:8001';
 const BACKEND_API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3002';
 
 export interface DetectionResult {
@@ -103,6 +103,8 @@ export interface CreateAnnotationRequest {
   label: string;
   confidence?: number;
   source: string;
+  bbox?: number[] | null;
+  points?: any | null;
 }
 
 export interface AnnotationListResponse {
@@ -135,7 +137,9 @@ export async function createAnnotation(annotation: CreateAnnotationRequest): Pro
   });
 
   if (!response.ok) {
-    throw new Error(`アノテーション作成に失敗: ${response.status}`);
+    // レスポンスの本文を読み取ってエラーメッセージに追加する
+    const errorText = await response.text();
+    throw new Error(`アノテーション作成に失敗: ${response.status} - ${errorText}`);
   }
 
   return response.json();
@@ -212,16 +216,11 @@ export async function uploadImage(imageFile: File): Promise<ImageUploadResponse>
 }
 
 // 検索関数
-export async function searchImages(query: string, topK: number = 5): Promise<any> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/search`, {  // imagesに修正
+export async function searchImages(query: string): Promise<string[]> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/search`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      query,
-      top_k: topK,
-    }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
   });
 
   if (!response.ok) {

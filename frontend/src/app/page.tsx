@@ -180,16 +180,27 @@ export default function KGAnnotationApp() {
   const testCreateAnnotation = async () => {
     try {
       console.log("➕ Testing annotation creation...");
+      
+      // まず画像をアップロード
+      const testImageBlob = new Blob(['test'], { type: 'image/jpeg' });
+      const testImageFile = new File([testImageBlob], 'test.jpg', { type: 'image/jpeg' });
+      
+      console.log("📤 Uploading test image...");
+      const uploadedImage = await uploadImage(testImageFile);
+      console.log("✅ Test image uploaded:", uploadedImage);
+      
       const testAnnotation = {
-        image_id: "550e8400-e29b-41d4-a716-446655440000",
-        annotation_type: "boundingbox", // 修正: "bbox" -> "boundingbox"
+        image_id: uploadedImage.id,  // アップロードした画像のIDを使用
+        annotation_type: "boundingbox",
         x: 100,
         y: 50,
         width: 200,
         height: 150,
         label: "test_object",
         confidence: 0.95,
-        source: "manual"
+        source: "manual",
+        bbox: null,
+        points: null,
       };
       
       const result = await createAnnotation(testAnnotation);
@@ -217,7 +228,9 @@ export default function KGAnnotationApp() {
         height: annotation.height,
         label: annotation.label,
         confidence: annotation.confidence || 0.6, // 修正: デフォルト値設定
-        source: annotation.source || "manual" // 修正: annotation.sourceがあればそれを使用
+        source: annotation.source || "manual", // 修正: annotation.sourceがあればそれを使用
+        bbox: null, // 追加
+        points: null, // 追加
       };
 
       const result = await createAnnotation(annotationData);
@@ -254,7 +267,9 @@ export default function KGAnnotationApp() {
           height: detection.bbox.y2 - detection.bbox.y1,
           label: detection.class_name,
           confidence: detection.confidence,
-          source: 'ai'
+          source: 'ai',
+          bbox: null, // 追加
+          points: null, // 追加
         };
         
         try {
@@ -284,14 +299,20 @@ export default function KGAnnotationApp() {
         for (const annotation of imageAnnotations) {
           const annotationData = {
             image_id: uploadedImage.id, // アップロードされた画像のIDを使用
-            annotation_type: "boundingbox",
+            // "boundingbox" を "bounding_box" にする方が一般的ですが、
+            // DBのENUM定義に合わせて "boundingbox" のままにします。
+            // もしバックエンドで `rename_all = "PascalCase"` のままにするなら
+            // ここを "BoundingBox" に変更します。
+            annotation_type: "boundingbox", // このままでOK
             x: annotation.x,
             y: annotation.y,
             width: annotation.width,
             height: annotation.height,
             label: annotation.label,
             confidence: annotation.confidence || 0.6,
-            source: annotation.source || "manual"
+            source: annotation.source || "manual", // "manual" や "ai" でOK
+            bbox: null,
+            points: null,
           };
           
           await createAnnotation(annotationData);

@@ -1,84 +1,78 @@
 use axum::{
-    routing::{ get, post, put},
+    extract::State,
+    http::{header::CONTENT_TYPE, Method},
+    routing::{get, post},
     Router,
 };
-use tower_http::cors::CorsLayer;
-use sqlx::PgPool;
-use std::sync::Arc;
-use aws_sdk_s3::Client as S3Client;
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use sqlx::postgres::PgPoolOptions;
+use std::env;
+use tower_http::cors::{Any, CorsLayer};
 
 mod models;
 mod handlers;
+mod utils; // utilsモジュールを宣言
 
-// models と handlers から必要なものをすべてインポート
-use handlers::{
+use crate::handlers::{
     annotation::{
-        list_annotations,
-        create_annotation,
-        update_annotation,
-        delete_annotation,
-        get_image_annotations,
-        get_distinct_labels, // この行を追加
+        create_annotation, delete_annotation, get_annotation, get_annotations_for_image,
+        update_annotation, get_available_labels,
     },
     dataset::create_dataset,
     export::export_dataset,
-    image::{upload_image, search_images},
+    image::{upload_image, search_images, get_image},
 };
+use aws_sdk_s3::Client as S3Client;
 
-// AppStateの定義
 #[derive(Clone)]
 pub struct AppState {
-    db: PgPool,
-    s3_client: Arc<S3Client>,
+    db: sqlx::PgPool,
+    s3_client: S3Client,
     s3_bucket: String,
-}
-
-#[derive(Serialize)]
-pub struct LabelsResponse {
-    pub labels: Vec<String>,
 }
 
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
-    
     println!("🦀 KG Annotation Backend starting...");
 
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let pool = PgPool::connect(&database_url).await.expect("Failed to connect to PostgreSQL");
+    let db_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&db_url)
+        .await
+        .expect("Failed to create pool.");
     println!("✅ Connected to PostgreSQL");
 
-    let aws_config = aws_config::from_env().load().await;
-    let s3_client = Arc::new(S3Client::new(&aws_config));
-    let s3_bucket = std::env::var("S3_BUCKET").unwrap_or_else(|_| "kgbacket".to_string());
+    let aws_config = aws_config::load_from_env().await;
+    let s3_client = S3Client::new(&aws_config);
+    let s3_bucket = env::var("S3_BUCKET_NAME").expect("S3_BUCKET_NAME must be set");
     println!("✅ AWS S3 client configured");
 
-    let state = AppState { 
-        db: pool, 
-        s3_client, 
+    let state = AppState {
+        db: pool,
+        s3_client,
         s3_bucket,
     };
 
-    let cors = CorsLayer::permissive();
+    let cors = CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::DELETE])
+        .allow_headers([CONTENT_TYPE])
+        .allow_origin(Any);
 
-    // ルーターの定義
     let app = Router::new()
-        .route("/health", get(|| async { "OK" }))
-        .route("/api/images", post(upload_image))
-        .route("/api/images/search", post(search_images))
-        .route("/api/images/:image_id/annotations", get(get_image_annotations))
-        .route("/api/annotations", get(list_annotations).post(create_annotation))
-        .route("/api/annotations/labels", get(get_distinct_labels)) // この行を追加
-        .route("/api/annotations/:id", put(update_annotation).delete(delete_annotation))
+        .route("/api/annotations", post(create_annotation).get(get_annotations_for_image))
+        .route("/api/annotations/labels", get(get_available_labels))
+        .route("/api/annotations/image/:image_id", get(get_annotations_for_image))
+        .route("/api/annotations/:id", get(get_annotation).put(update_annotation).delete(delete_annotation))
         .route("/api/datasets", post(create_dataset))
+        .route("/api/images", post(upload_image))
+        .route("/api/images/:id", get(get_image))
+        .route("/api/images/search", post(search_images))
         .route("/api/export", post(export_dataset))
         .with_state(state)
         .layer(cors);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3002").await.unwrap();
     println!("🚀 Server running on http://0.0.0.0:3002");
-    
     axum::serve(listener, app).await.unwrap();
 }

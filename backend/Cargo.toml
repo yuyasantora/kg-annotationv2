@@ -17,10 +17,12 @@ aws-sdk-s3 = "1.0"
 aws-config = { version = "1.0", features = ["behavior-version-latest"] }
 bcrypt = "0.15"
 jsonwebtoken = "9.0"
-reqwest = { version = "0.11", features = ["json"] }
+reqwest = { version = "0.11", features = ["json", "multipart"] }
 dotenv = "0.15"
 image = "0.24"
 tokio-util = { version = "0.7", features = ["io"] }
 bytes = "1.0"
 http = "0.2"
 zip = "4.5.0"
+futures = "0.3.31"
+validator = { version = "0.20.0", features = ["derive"] }
