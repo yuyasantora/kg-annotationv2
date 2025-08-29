@@ -259,8 +259,8 @@ export default function KGAnnotationApp() {
       
       for (const detection of detections) {
         const annotation = {
-          image_id: "550e8400-e29b-41d4-a716-446655440000", // 修正: 固定のUUID形式
-          annotation_type: 'boundingbox', // 修正: 'bbox' -> 'boundingbox'
+          image_id: "550e8400-e29b-41d4-a716-446655440000", 
+          annotation_type: 'boundingbox', 
           x: detection.bbox.x1,
           y: detection.bbox.y1,
           width: detection.bbox.x2 - detection.bbox.x1,
@@ -268,8 +268,8 @@ export default function KGAnnotationApp() {
           label: detection.class_name,
           confidence: detection.confidence,
           source: 'ai',
-          bbox: null, // 追加
-          points: null, // 追加
+          bbox: null, 
+          points: null, 
         };
         
         try {

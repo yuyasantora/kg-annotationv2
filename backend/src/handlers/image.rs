@@ -174,10 +174,17 @@ struct SearchSimilarResponse {
     results: Vec<SearchResultItem>,
 }
 
+// 検索結果の型を定義
+#[derive(Serialize)]
+pub struct SearchResultWithSimilarity {
+    pub id: Uuid,
+    pub similarity: f32,
+}
+
 pub async fn search_images(
     State(state): State<AppState>,
     Json(payload): Json<ImageSearchRequest>,
-) -> Result<Json<Vec<Uuid>>, StatusCode> {
+) -> Result<Json<Vec<SearchResultWithSimilarity>>, StatusCode> {
     // 1. DBから全画像ベクトルを取得
     let image_vectors = sqlx::query_as::<_, ImageVector>(
         "SELECT id, vector FROM images WHERE vector IS NOT NULL"
@@ -250,11 +257,14 @@ pub async fn search_images(
         })?;
 
     // 4. 結果を返す (StringをUuidにパースし直す)
-    let result_ids = search_res.results.into_iter()
-        .filter_map(|item| Uuid::parse_str(&item.id).ok())
+    let result_items = search_res.results.into_iter()
+        .filter_map(|item| Uuid::parse_str(&item.id).ok().map(|uuid| SearchResultWithSimilarity {
+            id: uuid,
+            similarity: item.similarity,
+        }))
         .collect();
 
-    Ok(Json(result_ids))
+    Ok(Json(result_items))
 }
 
 // 画像取得ハンドラを追加

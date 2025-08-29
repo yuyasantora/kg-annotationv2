@@ -216,7 +216,12 @@ export async function uploadImage(imageFile: File): Promise<ImageUploadResponse>
 }
 
 // 検索関数
-export async function searchImages(query: string): Promise<string[]> {
+interface SearchResult {
+  id: string;
+  similarity: number;
+}
+
+export async function searchImages(query: string): Promise<SearchResult[]> {
   const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

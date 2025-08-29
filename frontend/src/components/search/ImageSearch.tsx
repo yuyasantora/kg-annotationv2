@@ -8,8 +8,8 @@ import Image from 'next/image';
 
 interface SearchResult {
   id: string;
-  similarity?: number;
-  imageUrl?: string;
+  similarity: number;  // 必須フィールドに変更
+  imageUrl: string;
 }
 
 // Next.jsの設定でAPIのドメインを取得
@@ -25,12 +25,13 @@ export function ImageSearch() {
 
     setIsSearching(true);
     try {
-      const imageIds = await searchImages(query);
-      const searchResults: SearchResult[] = imageIds.map(id => ({
-        id,
-        imageUrl: `${API_BASE_URL}/api/images/${id}`
+      const searchResults = await searchImages(query);  // searchImagesの戻り値の型が変更される
+      const results: SearchResult[] = searchResults.map(result => ({
+        id: result.id,
+        similarity: result.similarity,
+        imageUrl: `${API_BASE_URL}/api/images/${result.id}`
       }));
-      setResults(searchResults);
+      setResults(results);
     } catch (error) {
       console.error("検索エラー:", error);
       setResults([]);
@@ -91,11 +92,9 @@ export function ImageSearch() {
                   />
                 </div>
                 <div className="text-sm">
-                  {result.similarity && (
-                    <p className="text-gray-600">
-                      類似度: {(result.similarity * 100).toFixed(1)}%
-                    </p>
-                  )}
+                  <p className="text-gray-600">
+                    類似度: {(result.similarity * 100).toFixed(1)}%
+                  </p>
                   <p className="font-mono text-xs text-gray-500 truncate">
                     {result.id}
                   </p>
