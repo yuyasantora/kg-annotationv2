@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { AnnotationCanvas } from "@/components/annotation/AnnotationCanvas";
-import { detectObjects, DetectionResult, getAnnotations, createAnnotation, uploadImage } from "@/lib/api";
+import { detectObjects, DetectionResult, getAnnotations, createAnnotation, uploadImage, getPresignedUrl, registerImage } from "@/lib/api";
 import {
   Upload,
   Image as ImageIcon,
@@ -290,27 +290,45 @@ export default function KGAnnotationApp() {
       for (let i = 0; i < uploadedFiles.length; i++) {
         const file = uploadedFiles[i];
         
-        // 1. 画像をアップロード
-        console.log(`📤 Uploading image ${i + 1}/${uploadedFiles.length}: ${file.name}`);
-        const uploadedImage = await uploadImage(file);
+        // 1. バックエンドから事前署名URLを取得
+        const { url: presignedUrl, s3_key } = await getPresignedUrl(file.name);
         
-        // 2. そのアノテーションを保存
+        // 2. 事前署名URLを使ってS3に直接アップロード
+        await fetch(presignedUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': file.type },
+        });
+
+        // 3. 画像の情報を取得 (width, height)
+        const image = new Image();
+        image.src = URL.createObjectURL(file);
+        await new Promise(resolve => { image.onload = resolve; });
+
+        // 4. アップロード完了をバックエンドに通知してDBに保存
+        const registeredImage = await registerImage({
+          s3_key: s3_key,
+          original_filename: file.name,
+          file_size: file.size,
+          width: image.naturalWidth,
+          height: image.naturalHeight,
+          format: file.type,
+        });
+        console.log(`✅ Image registered in DB: ${registeredImage.id}`);
+
+        // 5. アノテーションデータを保存
         const imageAnnotations = annotations[i] || [];
         for (const annotation of imageAnnotations) {
           const annotationData = {
-            image_id: uploadedImage.id, // アップロードされた画像のIDを使用
-            // "boundingbox" を "bounding_box" にする方が一般的ですが、
-            // DBのENUM定義に合わせて "boundingbox" のままにします。
-            // もしバックエンドで `rename_all = "PascalCase"` のままにするなら
-            // ここを "BoundingBox" に変更します。
-            annotation_type: "boundingbox", // このままでOK
+            image_id: registeredImage.id, // 登録された画像のIDを使用
+            annotation_type: "boundingbox",
             x: annotation.x,
             y: annotation.y,
             width: annotation.width,
             height: annotation.height,
             label: annotation.label,
             confidence: annotation.confidence || 0.6,
-            source: annotation.source || "manual", // "manual" や "ai" でOK
+            source: annotation.source || "manual",
             bbox: null,
             points: null,
           };

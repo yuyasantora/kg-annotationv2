@@ -280,3 +280,51 @@ export async function getAvailableLabels(): Promise<string[]> {
   const data = await response.json();
   return data.labels; // { labels: ["car", "person"] } のような形式を想定
 }
+
+// 事前署名URL取得のレスポンス型
+export interface PresignedUrlResponse {
+  url: string;
+  s3_key: string;
+}
+
+// 事前署名URLを取得する関数
+export async function getPresignedUrl(filename: string): Promise<PresignedUrlResponse> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/presigned-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`事前署名URLの取得に失敗: ${response.status}`);
+  }
+
+  return response.json();
+}
+
+export interface RegisterImageRequest {
+  s3_key: string;
+  original_filename: string;
+  file_size: number;
+  width: number;
+  height: number;
+  format: string;
+}
+
+export interface RegisterImageResponse {
+  id: string;
+}
+
+export async function registerImage(imageData: RegisterImageRequest): Promise<RegisterImageResponse> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(imageData),
+  });
+
+  if (!response.ok) {
+    throw new Error(`画像の登録に失敗: ${response.status}`);
+  }
+
+  return response.json();
+}

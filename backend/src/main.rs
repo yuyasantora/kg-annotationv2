@@ -12,6 +12,7 @@ mod models;
 mod handlers;
 mod utils; // utilsモジュールを宣言
 
+
 use crate::handlers::{
     annotation::{
         create_annotation, delete_annotation, get_annotation, get_annotations_for_image,
@@ -19,7 +20,7 @@ use crate::handlers::{
     },
     dataset::create_dataset,
     export::export_dataset,
-    image::{upload_image, search_images, get_image},
+    image::{upload_image, search_images, get_image, generate_presigned_url, register_uploaded_image},
 };
 use aws_sdk_s3::Client as S3Client;
 
@@ -65,6 +66,8 @@ async fn main() {
         .route("/api/annotations/image/:image_id", get(get_annotations_for_image))
         .route("/api/annotations/:id", get(get_annotation).put(update_annotation).delete(delete_annotation))
         .route("/api/datasets", post(create_dataset))
+        .route("/api/images/presigned-url", post(generate_presigned_url))
+        .route("/api/images/register", post(register_uploaded_image))
         .route("/api/images", post(upload_image))
         .route("/api/images/:id", get(get_image))
         .route("/api/images/search", post(search_images))

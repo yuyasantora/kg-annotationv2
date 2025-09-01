@@ -5,6 +5,7 @@ use axum::{
     response::Response,
     body::Body,
 };
+use aws_sdk_s3::Client as S3Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{postgres::PgRow, FromRow, Row};
@@ -17,7 +18,109 @@ use crate::{
     AppState,
 };
 use axum::http::header; // axumのheaderを使用
+use std::time::Duration;
+use aws_sdk_s3::presigning::PresigningConfig;
 
+// S3事前署名URL作成ハンドラ
+#[derive(Deserialize)]
+pub struct PresignedUrlRequest {
+    filename: String
+}
+
+#[derive(Serialize)]
+pub struct PresignedUrlResponse {
+    url: String,
+    s3_key: String,
+}
+
+pub async fn generate_presigned_url (
+    State(state): State<AppState>,
+    Json(payload): Json<PresignedUrlRequest>,
+) -> Result<Json<PresignedUrlResponse>, StatusCode> {
+    let uuid = Uuid::new_v4();
+    let s3_key = format!("images/{}_{}", uuid, payload.filename);
+
+    let presigning_config = PresigningConfig::expires_in(Duration::from_secs(300))
+        .map_err(|e| {
+            eprintln!("Failed to create presigning config: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+
+        })?;
+
+    let presigned_request = state.s3_client
+        .put_object()
+        .bucket(&state.s3_bucket)
+        .key(&s3_key)
+        .presigned(presigning_config)
+        .await
+        .map_err(|e| {
+            eprintln!("Failed to generate presigned URL: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(PresignedUrlResponse {
+        url: presigned_request.uri().to_string(),
+        s3_key,
+    }))
+}
+
+// 画像アップロードハンドラ
+#[derive(Deserialize)]
+pub struct RegisterImageRequest {
+    s3_key: String,
+    original_filename: String,
+    file_size: i64,
+    width: i32,
+    height: i32,
+    format: String,
+}
+
+#[derive(Serialize)]
+pub struct RegisterImageResponse {
+    id: Uuid,
+}
+
+pub async fn register_uploaded_image(
+    State(state): State<AppState>,
+    Json(payload): Json<RegisterImageRequest>,
+) -> Result<Json<RegisterImageResponse>, StatusCode> {
+    let id = Uuid::new_v4();
+    let user_id: Uuid = sqlx::query_scalar("SELECT id FROM users LIMIT 1")
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO images 
+            (id, user_id, s3_bucket, s3_key, width, height, format, 
+            original_filename, filename, file_size, created_at, updated_at)
+        VALUES 
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+        "#,
+        id,
+        user_id,
+        &state.s3_bucket,
+        payload.s3_key,
+        payload.width,
+        payload.height,
+        payload.format,
+        payload.original_filename,
+        payload.original_filename, // filename にも同じ値を使用
+        payload.file_size
+    )
+    .execute(&state.db)
+    .await
+    .map_err(|e| {
+        eprintln!("Failed to register image in DB: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(Json(RegisterImageResponse { id }))
+}
+
+
+    
 // upload_image ハンドラ
 pub async fn upload_image(
     State(state): State<AppState>,
