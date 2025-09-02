@@ -1,7 +1,13 @@
 import { useState, useEffect } from "react";
 import { DatasetFormat, exportDataset, getAvailableLabels } from "@/lib/api";
 
-export function CreateDataset() {
+interface CreateDatasetProps {
+  selectedImages: string[];
+  onSuccess: (downloadUrl: string) => void;
+  onError: (error: Error) => void;
+}
+
+export function CreateDataset({ selectedImages, onSuccess, onError }: CreateDatasetProps) {
   const [name, setName] = useState("");
   const [format, setFormat] = useState<DatasetFormat>(DatasetFormat.Yolo);
   const [filterType, setFilterType] = useState<"detection" | "classification">("detection");
@@ -24,7 +30,10 @@ export function CreateDataset() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name) return;
+    if (!name || selectedImages.length === 0) {
+      alert("データセット名を入力し、画像を1枚以上選択してください。");
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -35,6 +44,7 @@ export function CreateDataset() {
           type: filterType,
           labels: selectedLabels,
         },
+        image_ids: selectedImages,
       });
 
       // Blobからファイルをダウンロード
@@ -46,10 +56,12 @@ export function CreateDataset() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      
+      onSuccess(url); // 成功コールバックを呼び出し
 
     } catch (error) {
       console.error("Failed to export dataset:", error);
-      alert("データセットの作成に失敗しました。");
+      onError(error as Error); // エラーコールバックを呼び出し
     } finally {
       setIsLoading(false);
     }
@@ -123,9 +135,9 @@ export function CreateDataset() {
 
         <button
           type="submit"
-          disabled={isLoading || !name}
+          disabled={isLoading || !name || selectedImages.length === 0}
           className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-            isLoading || !name ? 'opacity-50 cursor-not-allowed' : ''
+            isLoading || !name || selectedImages.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
           {isLoading ? '作成中...' : 'データセットを作成'}

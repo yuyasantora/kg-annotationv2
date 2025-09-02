@@ -25,6 +25,20 @@ export interface AIDetectionResponse {
   };
 }
 
+export interface VectorizeResponse {
+  success: boolean;
+  vectors: number[][];
+}
+
+export interface SearchSimilarResponse {
+  success: boolean;
+  results: {
+    id: string;
+    score: number;
+  }[];
+}
+
+
 export async function detectObjects(imageFile: File): Promise<AIDetectionResponse> {
   const formData = new FormData();
   formData.append('image', imageFile);
@@ -41,7 +55,7 @@ export async function detectObjects(imageFile: File): Promise<AIDetectionRespons
   return response.json();
 }
 
-export async function vectorizeText(texts: string[]): Promise<any> {
+export async function vectorizeText(texts: string[]): Promise<VectorizeResponse> {
   const response = await fetch(`${AI_API_BASE_URL}/vectorize`, {
     method: 'POST',
     headers: {
@@ -57,7 +71,7 @@ export async function vectorizeText(texts: string[]): Promise<any> {
   return response.json();
 }
 
-export async function searchSimilarImages(queryVector: number[], topK: number = 5): Promise<any> {
+export async function searchSimilarImages(queryVector: number[], topK: number = 5): Promise<SearchSimilarResponse> {
   const response = await fetch(`${AI_API_BASE_URL}/search_similar`, {
     method: 'POST',
     headers: {
@@ -104,7 +118,7 @@ export interface CreateAnnotationRequest {
   confidence?: number;
   source: string;
   bbox?: number[] | null;
-  points?: any | null;
+  points?: unknown | null;
 }
 
 export interface AnnotationListResponse {
@@ -115,8 +129,8 @@ export interface AnnotationListResponse {
 // アノテーションAPI関数
 export async function getAnnotations(imageId?: string): Promise<AnnotationListResponse> {
   const url = imageId 
-    ? `${BACKEND_API_BASE_URL}/api/images/${imageId}/annotations`
-    : `${BACKEND_API_BASE_URL}/api/annotations`;
+    ? `${BACKEND_API_BASE_URL}/images/${imageId}/annotations`
+    : `${BACKEND_API_BASE_URL}/annotations`;
 
   const response = await fetch(url);
   
@@ -127,8 +141,8 @@ export async function getAnnotations(imageId?: string): Promise<AnnotationListRe
   return response.json();
 }
 
-export async function createAnnotation(annotation: CreateAnnotationRequest): Promise<any> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/annotations`, {
+export async function createAnnotation(annotation: CreateAnnotationRequest): Promise<AnnotationData> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/annotations`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -145,8 +159,8 @@ export async function createAnnotation(annotation: CreateAnnotationRequest): Pro
   return response.json();
 }
 
-export async function updateAnnotation(id: string, updates: Partial<CreateAnnotationRequest>): Promise<any> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/annotations/${id}`, {
+export async function updateAnnotation(id: string, updates: Partial<CreateAnnotationRequest>): Promise<AnnotationData> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/annotations/${id}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -161,8 +175,8 @@ export async function updateAnnotation(id: string, updates: Partial<CreateAnnota
   return response.json();
 }
 
-export async function deleteAnnotation(id: string): Promise<any> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/annotations/${id}`, {
+export async function deleteAnnotation(id: string): Promise<{ message: string }> {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/annotations/${id}`, {
     method: 'DELETE',
   });
 
@@ -193,9 +207,9 @@ export async function uploadImage(imageFile: File): Promise<ImageUploadResponse>
   formData.append('image', imageFile);
 
   try {
-    console.log('📤 Uploading to:', `${BACKEND_API_BASE_URL}/api/images`);
+    console.log('📤 Uploading to:', `${BACKEND_API_BASE_URL}/images`);
     
-    const response = await fetch(`${BACKEND_API_BASE_URL}/api/images`, {
+    const response = await fetch(`${BACKEND_API_BASE_URL}/images`, {
       method: 'POST',
       // CORSの設定を追加
       mode: 'cors',
@@ -222,7 +236,7 @@ interface SearchResult {
 }
 
 export async function searchImages(query: string): Promise<SearchResult[]> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/search`, {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/images/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -249,11 +263,12 @@ export interface ExportDatasetRequest {
     type: "detection" | "classification";
     labels: string[];
   };
+  image_ids?: string[]; 
 }
 
 // データセットエクスポートAPI関数
 export async function exportDataset(request: ExportDatasetRequest): Promise<Blob> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/export`, {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/export`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -271,7 +286,7 @@ export async function exportDataset(request: ExportDatasetRequest): Promise<Blob
 
 // 利用可能なアノテーションラベル一覧を取得する関数
 export async function getAvailableLabels(): Promise<string[]> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/annotations/labels`);
+  const response = await fetch(`${BACKEND_API_BASE_URL}/annotations/labels`);
   
   if (!response.ok) {
     throw new Error(`ラベル一覧の取得に失敗: ${response.status}`);
@@ -289,7 +304,7 @@ export interface PresignedUrlResponse {
 
 // 事前署名URLを取得する関数
 export async function getPresignedUrl(filename: string): Promise<PresignedUrlResponse> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/presigned-url`, {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/images/presigned-url`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ filename }),
@@ -316,7 +331,7 @@ export interface RegisterImageResponse {
 }
 
 export async function registerImage(imageData: RegisterImageRequest): Promise<RegisterImageResponse> {
-  const response = await fetch(`${BACKEND_API_BASE_URL}/api/images/register`, {
+  const response = await fetch(`${BACKEND_API_BASE_URL}/images/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(imageData),

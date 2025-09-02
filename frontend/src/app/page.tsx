@@ -205,7 +205,7 @@ export default function KGAnnotationApp() {
       
       const result = await createAnnotation(testAnnotation);
       console.log("✅ Create response:", result);
-      setBackendTestResult(`✅ Created: ${result.message}`);
+      setBackendTestResult(`✅ Created: ${result.id}`);
     } catch (error) {
       console.error("❌ Create test failed:", error);
       setBackendTestResult(`❌ Create Error: ${error}`);
