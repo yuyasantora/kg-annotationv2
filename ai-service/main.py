@@ -18,8 +18,26 @@ import traceback
 
 # YOLOXのカスタム実装をインポート
 from yolox.onnx_predictor import YOLOXONNXPredictor
+from mangum import Mangum
+
+# --- モデル読み込み ---
+
+# 環境変数からキャッシュディレクトリを設定 (Lambda環境では /tmp を使用)
+import os
+cache_dir = os.environ.get("SENTENCE_TRANSFORMERS_HOME", "/tmp/sentence_transformers")
+os.makedirs(cache_dir, exist_ok=True)
+
+# Load CLIP model
+try:
+    clip_model = SentenceTransformer('sentence-transformers/clip-ViT-B-32', cache_folder=cache_dir)
+    clip_model_loaded = True
+except Exception as e:
+    print(f"❌ Failed to load CLIP model: {e}")
+    clip_model = None
 
 app = FastAPI(title="KG Annotation AI Service", version="0.2.0")
+
+handler = Mangum(app) # この行を追加
 
 # バリデーションエラーハンドラを追加
 @app.exception_handler(RequestValidationError)
@@ -45,12 +63,11 @@ app.add_middleware(
 
 # グローバル変数でモデルを保持
 yolox_predictor = None
-clip_model = None
 
 @app.on_event("startup")
 async def startup_event():
     """アプリケーション起動時にモデルを読み込み"""
-    global yolox_predictor, clip_model
+    global yolox_predictor
     
     print("🚀 Loading AI models...")
     
@@ -70,14 +87,6 @@ async def startup_event():
         print("✅ YOLOX model loaded")
     except Exception as e:
         print(f"❌ Failed to load YOLOX model: {e}")
-    
-    # Sentence TransformersモデルをCLIPモデルに変更
-    try:
-        # モデルを'clip-ViT-B-32'に変更
-        clip_model = SentenceTransformer('clip-ViT-B-32')
-        print("✅ CLIP model (clip-ViT-B-32) loaded")
-    except Exception as e:
-        print(f"❌ Failed to load CLIP model: {e}")
     
 @app.get("/")
 async def root():

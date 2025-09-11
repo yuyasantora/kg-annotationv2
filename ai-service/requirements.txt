@@ -1,12 +1,15 @@
 fastapi
+mangum
 uvicorn
-python-multipart
 Pillow
-onnxruntime==1.15.1
-numpy
-sentence-transformers
-torch
-torchvision
-python-dotenv
 opencv-python-headless
+# sentence-transformersと互換性のあるバージョンを指定
+torch==2.1.2
+transformers==4.36.2
+sentence-transformers==2.2.2
+huggingface_hub==0.20.3
 faiss-cpu
+python-multipart
+onnxruntime # これはビルド済みwheelからインストールされるのでバージョン指定は不要
+numpy
+awslambdaric

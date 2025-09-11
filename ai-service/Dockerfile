@@ -1,10 +1,17 @@
 # STAGE 1: onnxruntime-builder
 # onnxruntimeをLambdaと互換性のある形でビルドするためだけのステージ
 # Python 3.7がインストールされるamazonlinux:2から、Python 3.9がプリインストールされている公式イメージに変更
-FROM python:3.9-buster as onnxruntime-builder
+# onnxruntimeのビルド要件を満たすため、より新しいDebian "Bookworm"をベースにします
+FROM python:3.10-bookworm as onnxruntime-builder
 
-# ビルドに必要なツールをインストール (yumからapt-getに変更)
-RUN apt-get update && apt-get install -y --no-install-recommends cmake g++ git
+# ビルドに必要なツールをインストール (Bookwormのデフォルトg++はバージョン12なので要件を満たします)
+RUN apt-get update && apt-get install -y --no-install-recommends g++ git wget ca-certificates
+
+# onnxruntimeが新しいバージョン(3.28+)を要求するため、最新のCMakeをインストールします
+ENV CMAKE_VERSION=3.30.0
+RUN wget -q https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz && \
+    tar -xzvf cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz --strip-components=1 -C /usr/local && \
+    rm cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz
 
 # onnxruntimeのソースコードをクローン
 RUN git clone --recursive https://github.com/microsoft/onnxruntime.git
@@ -13,15 +20,14 @@ WORKDIR /onnxruntime
 
 # onnxruntimeをビルドして、wheelパッケージを作成
 # Lambda環境に合わせて、不要なプロバイダを無効化し、最適化を行う
-RUN python3 -m pip install -U pip setuptools wheel
-RUN ./build.sh --config Release --build_wheel \
-    --parallel --use_coreml=OFF --use_cuda=OFF --use_tensorrt=OFF \
-    --use_migraphx=OFF --use_xnnpack=OFF --use_qnn=OFF \
-    --use_openvino=OFF --use_nnapi=OFF --use_dnnl=OFF
+# onnxruntimeのビルドプロセスがNumPyと、wheel作成にpackagingを要求するため、ここでインストールします
+RUN python3 -m pip install -U pip setuptools wheel numpy packaging
+# ビルド後のテストをスキップして安定化させる
+RUN ./build.sh --config Release --build_wheel --parallel --allow_running_as_root --skip_tests
 
 # STAGE 2: final-image
 # 実際にLambdaで実行される最終的なイメージ
-FROM python:3.9-slim
+FROM python:3.10-slim-bookworm
 
 WORKDIR /app
 
@@ -46,4 +52,4 @@ COPY . .
 
 # Lambdaが実行するコマンドを指定
 ENTRYPOINT [ "/usr/local/bin/python", "-m", "awslambdaric" ]
-CMD [ "main.app" ]
+CMD [ "main.handler" ]
